@@ -6,5 +6,7 @@ export const firebaseConfig = {
   appId: "1:949310719030:web:52e0d2d559f307b0a70497"
 };
 
-// 로그인 계정 (Firebase Authentication에 만든 사용자). 화면에서는 비밀번호만 묻는다.
-export const LOGIN_EMAIL = "owner@chaenggim.app";
+// 들어올 수 있는 구글 계정 (firestore.rules와 같은 값)
+export const OWNER_EMAIL = "juno99zz@gmail.com";
+// 일정 데이터가 저장된 경로 users/{DATA_UID}
+export const DATA_UID = "hsglp2oy1jexIRllxsOeC8Fb2582";

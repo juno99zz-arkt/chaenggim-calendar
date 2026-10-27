@@ -258,20 +258,18 @@ button{cursor:pointer}
 <div class="scrim login" id="login">
   <form class="modal" id="login-form" autocomplete="on">
     <h3>NOJI캘린더</h3>
-    <p class="hint">비밀번호를 입력하세요. 이 기기에서는 로그인 상태가 유지돼요.</p>
-    <input type="text" name="username" autocomplete="username" value="NOJI캘린더" hidden>
-    <div class="fld"><label for="pw">비밀번호</label><input id="pw" type="password" autocomplete="current-password" required></div>
+    <p class="hint">구글 계정으로 로그인하세요. 이 기기에서는 로그인 상태가 유지돼요.</p>
     <p class="hint" id="login-err" style="color:var(--warn)"></p>
-    <div class="mfoot"><button type="submit" class="btn primary">열기</button></div>
+    <div class="mfoot"><button type="submit" class="btn primary" id="google-login">구글로 로그인</button></div>
   </form>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/korean-lunar-calendar@0.3.6/dist/korean-lunar-calendar.min.js"></script>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import {getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {getAuth,GoogleAuthProvider,signInWithPopup,signInWithRedirect,onAuthStateChanged,signOut,setPersistence,browserLocalPersistence} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {initializeFirestore,persistentLocalCache,collection,doc,setDoc,deleteDoc,onSnapshot} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import {firebaseConfig,LOGIN_EMAIL} from './firebase-config.js';
+import {firebaseConfig,OWNER_EMAIL,DATA_UID} from './firebase-config.js';
 const CATS={
   family:{name:'가족 기념일·대소사',short:'가족',v:'--c-family'},
   estate:{name:'부동산·세금',short:'부동산·세금',v:'--c-estate'},
@@ -348,12 +346,12 @@ const md=d=>`${d.getMonth()+1}/${d.getDate()}`;
 const rangeLabel=o=>diffDays(o.start,o.end)>0?`${md(o.start)}~${md(o.end)}`:`${md(o.start)} (${DOW[o.start.getDay()]})`;
 
 /* ---------- store ---------- */
-// Firebase: 로그인한 계정의 users/{uid}/events·checks·reviews에 저장 (보안 규칙으로 본인만 읽고 씀)
+// Firebase: users/{DATA_UID}/events·checks·reviews에 저장 (보안 규칙으로 OWNER_EMAIL 구글 계정만 읽고 씀)
 const fbApp=initializeApp(firebaseConfig);
 const auth=getAuth(fbApp);
 const fdb=initializeFirestore(fbApp,{localCache:persistentLocalCache()});
-let UID=null,unsubs=[];
-const col=n=>collection(fdb,'users',UID,n);
+let unsubs=[];
+const col=n=>collection(fdb,'users',DATA_UID,n);
 function showErr(e){const b=$('#banner');b.hidden=false;b.textContent=e&&e.code==='resource-exhausted'?'저장 한도를 넘었어요. 잠시 뒤 다시 시도하세요.':'저장하지 못했어요. 인터넷 연결을 확인하고 다시 시도하세요.'}
 const store={
   async saveEvent(id,data){const ref=id?doc(col('events'),id):doc(col('events'));await setDoc(ref,data);return ref.id},
@@ -371,14 +369,20 @@ function collect(name){
 }
 onAuthStateChanged(auth,user=>{
   unsubs.forEach(u=>u());unsubs=[];
-  UID=user?user.uid:null;$('#login').hidden=!!user;
+  if(user&&user.email!==OWNER_EMAIL){$('#login-err').textContent=`${user.email} 계정은 들어올 수 없어요. ${OWNER_EMAIL}로 로그인하세요.`;signOut(auth);return}
+  $('#login').hidden=!!user;
   if(user){unsubs=['events','checks','reviews'].map(collect)}
-  else{S.events={};S.checks={};S.reviews={};S.loaded=false;render();setTimeout(()=>$('#pw').focus(),0)}
+  else{S.events={};S.checks={};S.reviews={};S.loaded=false;render()}
 });
 $('#login-form').onsubmit=async e=>{
   e.preventDefault();const err=$('#login-err');err.textContent='';
-  try{await setPersistence(auth,browserLocalPersistence);await signInWithEmailAndPassword(auth,LOGIN_EMAIL,$('#pw').value);$('#pw').value=''}
-  catch(x){err.textContent=x.code==='auth/too-many-requests'?'시도가 너무 많아요. 잠시 뒤 다시 시도하세요.':'비밀번호가 맞지 않아요.'}
+  const provider=new GoogleAuthProvider();provider.setCustomParameters({login_hint:OWNER_EMAIL,prompt:'select_account'});
+  try{await setPersistence(auth,browserLocalPersistence);await signInWithPopup(auth,provider)}
+  catch(x){
+    // 팝업이 막히는 환경(일부 홈 화면 앱)에서는 페이지 이동 방식으로 다시 시도
+    if(x.code==='auth/popup-blocked'||x.code==='auth/operation-not-supported-in-this-environment')return signInWithRedirect(auth,provider);
+    if(x.code!=='auth/popup-closed-by-user'&&x.code!=='auth/cancelled-popup-request')err.textContent='로그인하지 못했어요. 잠시 뒤 다시 시도하세요.';
+  }
 };
 $('#logout').onclick=()=>signOut(auth);
 
